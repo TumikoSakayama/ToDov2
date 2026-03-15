@@ -1,26 +1,23 @@
-from flask import Flask, render_template
-from sqlalchemy import sql
+from flask import Flask
+from models import db
+from routes import notes_blueprint
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URL'] = 'sqlite:///todo.db'
-db = sql(app)
+def create_app():
+    app = Flask(__name__)
 
-class Note(db.Model):
-    __tablename___ = 'notes'
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(80), nullable=False)
-    description = db.Column(db.String(200))
-    priority = db.Column(db.Integer, default=0)
-    category_id = db.Column(db.Integer, db.ForeignKey('category_id'))
-    category = db.relationship("Category", backref=db.backref('notes', lazy=True))
-    deadline = db.Column(db.DateTime)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///todo.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-class Category(db.Model):
-    __tablename___ = 'categories'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50, nullable=False, unique=True))
-    notes = db.relationship('Note', backref='category', lazy=True)
+    db.init_app(app)
+    app.register_blueprint(notes_blueprint)
 
-    def __str__(self):
-        return self.name
-    
+    with app.app_context():
+        db.create_all()
+        print("Database initialized and tables created: ", db.metadata.tables.keys())
+
+    return app
+
+
+if __name__ == '__main__':
+    app = create_app()
+    app.run(debug=True)

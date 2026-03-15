@@ -1,19 +1,21 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import SQLAlchemy
 
-Base = declarative_base()
+db = SQLAlchemy()
 
-class Note(Base):
-    __tablename__ = 'notes'
-    id = Column(Integer, primary_key=True)
-    title = Column(String, nullable=False)
-    description = Column(String)
-    priority = Column(Integer, default=0)
-    category_id = Column(Integer, ForeignKey('categories_id'))
-    #category = Column(String)
-    deadline = Column(DateTime)
-
-class Category(Base):
+class Category(db.Model):
     __tablename__ = 'categories'
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    notes = db.relationship('Note', backref='category', lazy=True)
+
+    def __repr__(self):
+        return f'Category {self.name}'
+
+class Note(db.Model):
+    __tablename__ = 'notes'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.String(200))
+    priority = db.Column(db.Integer, default=0)
+    deadline = db.Column(db.DateTime)
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
