@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
@@ -18,4 +19,7 @@ class Note(db.Model):
     description = db.Column(db.String(200))
     priority = db.Column(db.Integer, default=0)
     deadline = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('notes.id'), nullable=True)
+    subtasks = db.relationship('Note', backref=db.backref('parent', remote_side=[id]), lazy=True)
