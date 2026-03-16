@@ -16,10 +16,6 @@ def create_app():
     Migrate(app, db)
     app.register_blueprint(notes_blueprint)
 
-    with app.app_context():
-        db.create_all()
-        print("Database initialized and tables created: ", db.metadata.tables.keys())
-
     return app
 
 app = create_app()

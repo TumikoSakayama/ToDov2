@@ -29,6 +29,13 @@ def serialize_note(note, nested=False):
         data['subtasks'] = [sub.id for sub in note.subtasks]
     return data
 
+@notes_blueprint.route('/')
+def index():
+    """A simple view to confirm the app is running and provide guidance."""
+    return ("<h1>Todo App Backend is Running!</h1>"
+            "<p>This is the backend server. Your API endpoints are available at:</p>"
+            "<ul><li><a href='/api/notes'>/api/notes</a></li><li><a href='/api/categories'>/api/categories</a></li><li><a href='/api/tags'>/api/tags</a></li></ul>")
+
 @notes_blueprint.route('/api/notes', methods=['GET'])
 def get_all_notes():
     query = Note.query
