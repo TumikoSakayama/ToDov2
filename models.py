@@ -3,6 +3,17 @@ from sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+# Association table for the many-to-many relationship between Notes and Tags
+note_tags = db.Table('note_tags',
+    db.Column('note_id', db.Integer, db.ForeignKey('notes.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tags.id'), primary_key=True)
+)
+
+class Tag(db.Model):
+    __tablename__ = 'tags'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+
 class Category(db.Model):
     __tablename__ = 'categories'
     id = db.Column(db.Integer, primary_key=True)
@@ -24,3 +35,7 @@ class Note(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('notes.id'), nullable=True)
     subtasks = db.relationship('Note', backref=db.backref('parent', remote_side=[id]), lazy=True, cascade="all, delete-orphan")
+    tags = db.relationship('Tag', secondary=note_tags, lazy='subquery',
+                           backref=db.backref('notes', lazy=True))
+    recurrence_rule = db.Column(db.String(200), nullable=True) # iCalendar RRULE format
+    next_occurrence_date = db.Column(db.DateTime, nullable=True)

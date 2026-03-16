@@ -1,15 +1,39 @@
 from flask import Blueprint, jsonify, request
-from models import db, Note, Category
+from models import db, Note, Category, Tag
 from datetime import datetime, timedelta
 from sqlalchemy import extract
+from dateutil.rrule import rrulestr
 
 notes_blueprint = Blueprint('note', __name__)
+
+# Helper for serialization to support nesting and tags
+def serialize_note(note, nested=False):
+    data = {
+        'id': note.id,
+        'title': note.title,
+        'description': note.description,
+        'priority': note.priority,
+        'is_done': note.is_done,
+        'deadline': note.deadline.isoformat() if note.deadline else None,
+        'created_at': note.created_at.isoformat() if note.created_at else None,
+        'category': note.category.name if note.category else None,
+        'category_id': note.category_id,
+        'parent_id': note.parent_id,
+        'tags': [tag.name for tag in note.tags],
+        'recurrence_rule': note.recurrence_rule,
+        'next_occurrence_date': note.next_occurrence_date.isoformat() if note.next_occurrence_date else None
+    }
+    if nested:
+        data['subtasks'] = [serialize_note(sub, nested=True) for sub in note.subtasks]
+    else:
+        data['subtasks'] = [sub.id for sub in note.subtasks]
+    return data
 
 @notes_blueprint.route('/api/notes', methods=['GET'])
 def get_all_notes():
     query = Note.query
 
-    # 1. Filtering by Category or Priority
+    # 1. Filtering
     category_id = request.args.get('category_id')
     if category_id:
         query = query.filter(Note.category_id == category_id)
@@ -18,7 +42,11 @@ def get_all_notes():
     if priority:
         query = query.filter(Note.priority == priority)
 
-    # 2. Filter by Task added in a given day
+    tag_name = request.args.get('tag')
+    if tag_name:
+        query = query.join(Note.tags).filter(Tag.name == tag_name)
+
+
     created_date = request.args.get('created_date') # Format YYYY-MM-DD
     if created_date:
         try:
@@ -29,7 +57,6 @@ def get_all_notes():
         except ValueError:
             pass # Handle invalid date format gracefully
 
-    # 3. Show task by week or month (Time filtering on Deadline)
     view = request.args.get('view')
     if view:
         today = datetime.now()
@@ -43,7 +70,12 @@ def get_all_notes():
             query = query.filter(extract('month', Note.deadline) == today.month)
             query = query.filter(extract('year', Note.deadline) == today.year)
 
-    # 4. Sorting
+    # Handle nested view
+    is_nested = request.args.get('nested', 'false').lower() == 'true'
+    if is_nested:
+        query = query.filter(Note.parent_id.is_(None))
+
+    # 2. Sorting
     sort_by = request.args.get('sort_by', 'id')
     order = request.args.get('order', 'asc')
     
@@ -56,19 +88,7 @@ def get_all_notes():
 
     notes = query.all()
 
-    return jsonify([{
-        'id': n.id,
-        'title': n.title,
-        'description': n.description,
-        'priority': n.priority,
-        'is_done': n.is_done,
-        'deadline': n.deadline.isoformat() if n.deadline else None,
-        'created_at': n.created_at.isoformat() if n.created_at else None,
-        'category': n.category.name if n.category else None,
-        'category_id': n.category_id,
-        'parent_id': n.parent_id,
-        'subtasks': [sub.id for sub in n.subtasks]
-    } for n in notes])
+    return jsonify([serialize_note(n, nested=is_nested) for n in notes])
 
 @notes_blueprint.route('/api/categories', methods=['GET']) 
 def get_all_categories():
@@ -77,6 +97,11 @@ def get_all_categories():
         'id': c.id,
         'name': c.name
     } for c in categories])
+
+@notes_blueprint.route('/api/tags', methods=['GET'])
+def get_all_tags():
+    tags = Tag.query.all()
+    return jsonify([{'id': t.id, 'name': t.name} for t in tags])
 
 @notes_blueprint.route('/api/notes', methods=['POST'])
 def create_note():
@@ -96,8 +121,27 @@ def create_note():
         is_done = data.get('is_done', False),
         deadline = deadline,
         category_id = data.get('category_id'),
-        parent_id = data.get('parent_id') # Handle subtasks
+        parent_id = data.get('parent_id'), # Handle subtasks
+        recurrence_rule = data.get('recurrence_rule')
     )
+
+    # Handle tags
+    if 'tags' in data and isinstance(data['tags'], list):
+        for tag_name in data['tags']:
+            tag = Tag.query.filter_by(name=tag_name).first()
+            if not tag:
+                tag = Tag(name=tag_name)
+                db.session.add(tag)
+            new_note.tags.append(tag)
+
+    # Calculate next occurrence if rule exists
+    if new_note.recurrence_rule and new_note.deadline:
+        try:
+            rule = rrulestr(new_note.recurrence_rule, dtstart=new_note.deadline)
+            new_note.next_occurrence_date = rule.after(new_note.deadline)
+        except Exception:
+            pass # Ignore invalid rules for now
+
     db.session.add(new_note)
     db.session.commit()
 
@@ -113,16 +157,63 @@ def update_note(note_id):
     note.priority = data.get('priority', note.priority)
     note.category_id = data.get('category_id', note.category_id)
     note.parent_id = data.get('parent_id', note.parent_id)
+    note.recurrence_rule = data.get('recurrence_rule', note.recurrence_rule)
     
     if 'is_done' in data:
+        if data['is_done']:
+            # Check if any direct subtask is incomplete
+            if any(not sub.is_done for sub in note.subtasks):
+                return jsonify({'error': 'Cannot complete task. All subtasks must be completed first.'}), 400
+        
+        # Handle Recurrence: If completing, create the next task
+        if data['is_done'] and not note.is_done and note.recurrence_rule:
+            try:
+                # Calculate next deadline based on rule
+                start_date = note.deadline or datetime.now()
+                rule = rrulestr(note.recurrence_rule, dtstart=start_date)
+                next_date = rule.after(datetime.now())
+                
+                if next_date:
+                    new_note = Note(
+                        title=note.title,
+                        description=note.description,
+                        priority=note.priority,
+                        category_id=note.category_id,
+                        parent_id=note.parent_id, # Keep hierarchy?
+                        deadline=next_date,
+                        recurrence_rule=note.recurrence_rule,
+                        next_occurrence_date=rule.after(next_date)
+                    )
+                    # Copy tags
+                    for tag in note.tags:
+                        new_note.tags.append(tag)
+                    
+                    db.session.add(new_note)
+            except Exception as e:
+                print(f"Failed to generate recurring task: {e}")
+
         note.is_done = data['is_done']
-        if note.is_done:
-            # Recursively mark all subtasks as done
-            def mark_subtasks_done(task):
-                for sub in task.subtasks:
-                    sub.is_done = True
-                    mark_subtasks_done(sub)
-            mark_subtasks_done(note)
+
+        # Handle tags
+        if 'tags' in data:
+            note.tags.clear() # Simple approach: clear and re-add
+            if isinstance(data['tags'], list):
+                for tag_name in data['tags']:
+                    tag = Tag.query.filter_by(name=tag_name).first()
+                    if not tag:
+                        tag = Tag(name=tag_name)
+                        db.session.add(tag)
+                    note.tags.append(tag)
+        # Update parent status if all subtasks are done
+        curr = note
+        while curr.parent_id:
+            parent = curr.parent
+            if not parent:
+                break
+            
+            all_done = all(sub.is_done for sub in parent.subtasks)
+            parent.is_done = all_done
+            curr = parent
 
     if note.parent_id == note.id:
         return jsonify({'error': 'A task cannot be its own subtask'}), 400
@@ -135,6 +226,14 @@ def update_note(note_id):
                 pass
         else:
             note.deadline = None
+
+    # Recalculate next occurrence if deadline or rule changed
+    if (data.get('recurrence_rule') or 'deadline' in data) and note.recurrence_rule and note.deadline:
+        try:
+            rule = rrulestr(note.recurrence_rule, dtstart=note.deadline)
+            note.next_occurrence_date = rule.after(note.deadline)
+        except Exception:
+            pass
 
     db.session.commit()
     return jsonify({'message': 'Note updated successfully'})
