@@ -1,6 +1,7 @@
 from flask import Flask
 from models import db
 from routes import notes_blueprint
+from flask_migrate import Migrate
 
 def create_app():
     app = Flask(__name__)
@@ -9,6 +10,7 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
+    Migrate(app, db)
     app.register_blueprint(notes_blueprint)
 
     with app.app_context():

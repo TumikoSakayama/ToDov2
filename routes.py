@@ -61,6 +61,7 @@ def get_all_notes():
         'title': n.title,
         'description': n.description,
         'priority': n.priority,
+        'is_done': n.is_done,
         'deadline': n.deadline.isoformat() if n.deadline else None,
         'created_at': n.created_at.isoformat() if n.created_at else None,
         'category': n.category.name if n.category else None,
@@ -92,6 +93,7 @@ def create_note():
         title = data.get('title'),
         description = data.get('description'),
         priority = data.get('priority', 0),
+        is_done = data.get('is_done', False),
         deadline = deadline,
         category_id = data.get('category_id'),
         parent_id = data.get('parent_id') # Handle subtasks
@@ -111,6 +113,19 @@ def update_note(note_id):
     note.priority = data.get('priority', note.priority)
     note.category_id = data.get('category_id', note.category_id)
     note.parent_id = data.get('parent_id', note.parent_id)
+    
+    if 'is_done' in data:
+        note.is_done = data['is_done']
+        if note.is_done:
+            # Recursively mark all subtasks as done
+            def mark_subtasks_done(task):
+                for sub in task.subtasks:
+                    sub.is_done = True
+                    mark_subtasks_done(sub)
+            mark_subtasks_done(note)
+
+    if note.parent_id == note.id:
+        return jsonify({'error': 'A task cannot be its own subtask'}), 400
     
     if 'deadline' in data:
         if data['deadline']:
