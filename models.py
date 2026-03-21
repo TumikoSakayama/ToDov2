@@ -20,9 +20,6 @@ class Category(db.Model):
     name = db.Column(db.String(50), nullable=False, unique=True)
     notes = db.relationship('Note', backref='category', lazy=True)
 
-    def __repr__(self):
-        return f'Category {self.name}'
-
 class Note(db.Model):
     __tablename__ = 'notes'
     id = db.Column(db.Integer, primary_key=True)
@@ -32,10 +29,15 @@ class Note(db.Model):
     deadline = db.Column(db.DateTime)
     is_done = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+
     parent_id = db.Column(db.Integer, db.ForeignKey('notes.id'), nullable=True)
+
     subtasks = db.relationship('Note', backref=db.backref('parent', remote_side=[id]), lazy=True, cascade="all, delete-orphan")
+
     tags = db.relationship('Tag', secondary=note_tags, lazy='subquery',
                            backref=db.backref('notes', lazy=True))
+    
     recurrence_rule = db.Column(db.String(200), nullable=True) # iCalendar RRULE format
     next_occurrence_date = db.Column(db.DateTime, nullable=True)
