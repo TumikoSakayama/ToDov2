@@ -10,16 +10,13 @@ def create_app():
 
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///todo.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
     db.init_app(app)
-    #Migrate(app, db)
-    app.register_blueprint(notes_blueprint)
 
     with app.app_context():
         db.create_all()  # Ensure tables are created
         print("Database tables created successfully!")
 
-    return app
+    app.register_blueprint(notes_blueprint)
 
     @app.cli.command("digest-recurring")
     def digest_recurring():
@@ -50,7 +47,9 @@ def create_app():
         
         db.session.commit()
         print("Recurring tasks processed.")
+    return app
+
+app = create_app()
 
 if __name__ == '__main__':
-    app = create_app()
     app.run(debug=True)
