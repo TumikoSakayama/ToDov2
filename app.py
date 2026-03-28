@@ -49,7 +49,6 @@ def create_app():
         print("Recurring tasks processed.")
     return app
 
-app = create_app()
-
 if __name__ == '__main__':
+    app = create_app()
     app.run(debug=True)
