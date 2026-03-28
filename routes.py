@@ -243,7 +243,7 @@ def update_note(note_id):
             pass
 
     db.session.commit()
-    return jsonify({'message': 'Note updated successfully'})
+    return {'message': 'Task updated successfully'}, 200
 
 @notes_blueprint.route('/api/notes/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):

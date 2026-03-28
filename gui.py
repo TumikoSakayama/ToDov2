@@ -33,10 +33,14 @@ def main(page: ft.Page):
                 else:
                     for note in notes:
                         current_id = note['id']
+
+                        cb = ft.Checkbox(value=note.get('is_done', False))
+                        cb.on_change = lambda e, tid=note['id'], title=note['title'], ref=cb: confirm_completion(tid, title, ref)
+
                         def delete_clicked(e, id=current_id):
                             try:
                                 requests.delete(f"{API_URL}/{id}", timeout=5)
-                                load_tasks()
+                                load_tasks()    
                             except Exception as ex:
                                 print(f"Delete Error: {ex}")
 
@@ -44,7 +48,8 @@ def main(page: ft.Page):
                             ft.Card(
                                 content=ft.Container(
                                     content=ft.ListTile(
-                                        title=ft.Text(note['title'], weight="bold"),
+                                        leading = cb,
+                                        title=ft.Text(note['title'], weight="bold", spans=[ft.TextSpan(style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH))] if note.get('is_done', False) else []),
                                         subtitle=ft.Text(f"Priority: {note.get('priority', 0)}"),
                                         trailing=ft.IconButton(
                                             icon=ft.Icons.DELETE,
@@ -104,6 +109,59 @@ def main(page: ft.Page):
         tasks_view
     )
     load_tasks()
+
+    def confirm_completion(task_id, task_title, checkbox_ref):
+        complete_dialog = ft.AlertDialog()
+        
+        def undo(e):
+            try:
+                res = requests.put(f"{API_URL}/{task_id}", json={'is_done': False}, timeout=5)
+                if res.status_code == 200:
+                    page.snack_bar.open = False
+                    load_tasks()
+                    page.update()
+            except Exception as ex:
+                print(f"Undo Error: {ex}")
+
+        def handle_yes(e):
+            try:
+                res = requests.put(f"{API_URL}/{task_id}", json={'is_done': True}, timeout=5)
+                if res.status_code == 200:
+                    complete_dialog.open = False
+                    load_tasks()
+                    page.snack_bar = ft.SnackBar(
+                        content=ft.Text(f"'{task_title}' marked as completed."),
+                        action='UNDO',
+                        duration=5000       
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            except Exception as ex:
+                print(f"Completion Error: {ex}")
+
+        def handle_no(e):
+            checkbox_ref.value = False
+            complete_dialog.open = False
+            page.update()
+
+        complete_dialog.title = ft.Text("Confirm Completion")
+        complete_dialog.content = ft.Text(f"Mark '{task_title}' as completed?")
+        complete_dialog.actions = [
+            ft.TextButton("No", on_click=handle_no),
+            ft.Button("Yes", on_click=handle_yes, bgcolor="green", color="white")
+        ]
+        page.overlay.append(complete_dialog)
+        complete_dialog.open = True
+        page.update()
+
+    def update_task(task_id, status):
+        try:
+            requests.put(f"{API_URL}/{task_id}", json={'is_done': status}, timeout=5)
+            load_tasks()
+            page.update()
+        except Exception as ex:
+            print(f"Update Error: {ex}")
+
 
 if __name__ == "__main__":
     ft.run(main)
