@@ -4,6 +4,8 @@ import requests
 API_URL = "http://127.0.0.1:5000/api/notes"
 
 def main(page: ft.Page):
+    current_task_payload = {}
+
     page.title = "My Advanced Todo App"
     page.theme_mode = "light" 
     page.window_width = 400
@@ -12,7 +14,85 @@ def main(page: ft.Page):
     page.vertical_alignment = ft.CrossAxisAlignment.CENTER
 
     tasks_view = ft.Column(spacing=10, scroll="adaptive")
-    new_task_title = ft.TextField(label="Task Title", autofocus=True)
+    
+    main_title = ft.TextField(label="Task Title", autofocus=True)
+    main_desc = ft.TextField(label="Task Description", multiline=True)
+    main_cat = ft.Dropdown(label="Category", value="Personal", options=[
+        ft.dropdown.Option("Personal"),
+        ft.dropdown.Option("Work"),
+        ft.dropdown.Option("Health"),
+        ft.dropdown.Option("Shopping"),
+        ft.dropdown.Option("Finance"),
+        ft.dropdown.Option("Home"),
+        ft.dropdown.Option("Other")
+    ])
+    main_priority = ft.Dropdown(label="Priority", value="Low", options=[
+        ft.dropdown.Option("Low"),
+        ft.dropdown.Option("Medium"),
+        ft.dropdown.Option("High")
+    ])
+
+    sub_title = ft.TextField(label="Subtask Title")
+    sub_desc = ft.TextField(label="Subtask Description", multiline=True)
+    sub_priority = ft.Dropdown(label="Priority", value="Low", options=[
+        ft.dropdown.Option("Low"),
+        ft.dropdown.Option("Medium"),
+        ft.dropdown.Option("High")
+    ])
+
+    def close_all_dialogs():
+        add_task_dialog.open = False
+        prompt_subtask_dialog.open = False
+        subtask_form_dialog.open = False
+        page.update()
+
+    def finalize_and_send():
+        try:
+            res = requests.post(API_URL, json=current_task_payload, timeout=5)
+            if res.status_code in [200, 201]:
+                load_tasks()
+                close_all_dialogs()
+                current_task_payload.clear()
+        except Exception as ex:
+            print(f"Final Save Error: {ex}")
+
+    def add_subtask(e):
+        new_sub = {
+            "title": sub_title.value,
+            "description": sub_desc.value,
+            "priority": sub_priority.value,
+            "category": current_task_payload["category"]
+        }
+        current_task_payload["subtasks"].append(new_sub)
+
+        sub_title.value = ""
+        sub_desc.value = ""
+        sub_priority.value = "Low"
+
+        subtask_form_dialog.open = False
+        prompt_subtask_dialog.open = True
+        page.update()
+
+    def start_sub_flow(e):
+        if not main_title.value:
+            main_title.error_text= "Title can not be empty!"
+            page.update()
+            return
+        
+        current_task_payload.update({
+            "title": main_title.value,
+            "description": main_desc.value,
+            "category": main_cat.value,
+            "priority": main_priority.value,
+            "subtasks": []
+        })
+
+        main_title.value = ""
+        main_desc.value = ""
+
+        add_task_dialog.open = False
+        prompt_subtask_dialog.open = True
+        page.update()
 
     def load_tasks():
         try:
@@ -32,10 +112,18 @@ def main(page: ft.Page):
                     )
                 else:
                     for note in notes:
-                        current_id = note['id']
+                        is_task_done = note.get('is_done', False)
+                        cb = ft.Checkbox(value=is_task_done)
 
-                        cb = ft.Checkbox(value=note.get('is_done', False))
-                        cb.on_change = lambda e, tid=note['id'], title=note['title'], ref=cb: confirm_completion(tid, title, ref)
+                        def on_checkbox_change(e, tid=note['id'], title=note['title'], ref=cb):
+                            if ref.value == True: # Fixed typo from 'rev' to 'ref'
+                                confirm_completion(tid, title, ref)
+                            else:
+                                update_task(tid, False)
+
+                        cb.on_change = on_checkbox_change
+                        
+                        current_id = note['id']
 
                         def delete_clicked(e, id=current_id):
                             try:
@@ -48,8 +136,12 @@ def main(page: ft.Page):
                             ft.Card(
                                 content=ft.Container(
                                     content=ft.ListTile(
-                                        leading = cb,
-                                        title=ft.Text(note['title'], weight="bold", spans=[ft.TextSpan(style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH))] if note.get('is_done', False) else []),
+                                        leading=cb,
+                                        title=ft.Text(
+                                            note['title'], 
+                                            weight="bold", 
+                                            spans=[ft.TextSpan(style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH))] if is_task_done else []
+                                        ),
                                         subtitle=ft.Text(f"Priority: {note.get('priority', 0)}"),
                                         trailing=ft.IconButton(
                                             icon=ft.Icons.DELETE,
@@ -82,14 +174,38 @@ def main(page: ft.Page):
             print(f"Save Error: {ex}")
 
     add_task_dialog= ft.AlertDialog(
-        title=ft.Text("Add a New Task"),
-        content=new_task_title,
+        title=ft.Text("Add Main Task"),
+        content=ft.Column([main_title, main_desc, main_cat, main_priority]),
         actions=[
-            ft.TextButton("Cancel", on_click=lambda _: (setattr(add_task_dialog, "open", False), page.update())),
-            ft.TextButton("Save", on_click=save_tasks)
+            ft.TextButton("Cancel", on_click=lambda _: close_all_dialogs()),
+            ft.TextButton("Save", on_click=start_sub_flow)
         ])
 
-    page.overlay.append(add_task_dialog)
+    prompt_subtask_dialog = ft.AlertDialog(
+        title=ft.Text("Subtasks"),
+        content=ft.Text("Would you like to add a subtask to this task?"),
+        actions=[
+            ft.TextButton("No", "Finish", on_click=lambda _: finalize_and_send()),
+            ft.Button("Yes", "Add One", on_click=lambda _: (
+                setattr(prompt_subtask_dialog, "open", False),
+                setattr(subtask_form_dialog, "open", True),
+                page.update()
+            ))
+        ]
+    )
+
+    subtask_form_dialog = ft.AlertDialog(
+        title=ft.Text("Add Subtask"),
+        content=ft.Column([sub_title, sub_desc, sub_priority], tight=True),
+        actions=[
+            ft.TextButton("Discard & Finish", on_click=lambda _: finalize_and_send()),
+            ft.Button("Add Another", on_click=add_subtask)
+        ]
+    )
+
+    page.overlay.extend([add_task_dialog, prompt_subtask_dialog, subtask_form_dialog])
+
+    #page.overlay.append(add_task_dialog)
     page.floating_action_button = ft.FloatingActionButton(
         content=ft.Container(
             content=ft.Text("+", size=22, weight="bold", color="white"),
@@ -115,10 +231,9 @@ def main(page: ft.Page):
         
         def undo(e):
             try:
-                res = requests.put(f"{API_URL}/{task_id}", json={'is_done': False}, timeout=5)
-                if res.status_code == 200:
+                update_task(task_id, False)
+                if page.snack_bar:
                     page.snack_bar.open = False
-                    load_tasks()
                     page.update()
             except Exception as ex:
                 print(f"Undo Error: {ex}")
@@ -132,6 +247,7 @@ def main(page: ft.Page):
                     page.snack_bar = ft.SnackBar(
                         content=ft.Text(f"'{task_title}' marked as completed."),
                         action='UNDO',
+                        on_action=undo,
                         duration=5000       
                     )
                     page.snack_bar.open = True
