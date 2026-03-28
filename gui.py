@@ -97,13 +97,13 @@ def main(page: ft.Page):
     page.add(
         ft.Container(
             content=ft.Text("My Tasks", size=28, weight="bold"),
-            margin=ft.margin.only(top=20, bottom=10)
+            margin=ft.Margin.only(top=20, bottom=10)
         ),
-        ft.ElevatedButton("Refresh List", icon="refresh", on_click= lambda _: load_tasks()),
+        ft.Button("Refresh List", icon="refresh", on_click= lambda _: load_tasks()),
         ft.Divider(),
         tasks_view
     )
     load_tasks()
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)
