@@ -96,7 +96,7 @@ def main(page: ft.Page):
 
     def load_tasks():
         try:
-            response = requests.get(API_URL, timeout=5)
+            response = requests.get(f"{API_URL}?nested=true", timeout=5)
             tasks_view.controls.clear()
 
             if response.status_code == 200:
@@ -111,53 +111,71 @@ def main(page: ft.Page):
                         )
                     )
                 else:
-                    for note in notes:
+                    def build_task_ui(note):
                         is_task_done = note.get('is_done', False)
-                        cb = ft.Checkbox(value=is_task_done)
+                        subtasks = note.get('subtasks', [])
 
-                        def on_checkbox_change(e, tid=note['id'], title=note['title'], ref=cb):
-                            if ref.value == True: # Fixed typo from 'rev' to 'ref'
+                        
+                        cb = ft.Checkbox(value=is_task_done)
+                        def on_change(e):
+                            if cb.value:
                                 confirm_completion(tid, title, ref)
                             else:
                                 update_task(tid, False)
+                        cb.on_change = on_change
 
-                        cb.on_change = on_checkbox_change
-                        
-                        current_id = note['id']
-
-                        def delete_clicked(e, id=current_id):
+                        def del_clicked(e):
                             try:
-                                requests.delete(f"{API_URL}/{id}", timeout=5)
-                                load_tasks()    
+                                requests.delete(f"{API_URL}/{tid}", timeout=5)
+                                load_tasks()
                             except Exception as ex:
-                                print(f"Delete Error: {ex}")
+                                print(f"Delete error: {ex}")
 
-                        tasks_view.controls.append(
-                            ft.Card(
-                                content=ft.Container(
-                                    content=ft.ListTile(
-                                        leading=cb,
-                                        title=ft.Text(
-                                            note['title'], 
-                                            weight="bold", 
-                                            spans=[ft.TextSpan(style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH))] if is_task_done else []
-                                        ),
-                                        subtitle=ft.Text(f"Priority: {note.get('priority', 0)}"),
-                                        trailing=ft.IconButton(
-                                            icon=ft.Icons.DELETE,
-                                            icon_color="red",
-                                            on_click=delete_clicked
-                                        ),
-                                    ),
-                                    padding=5
-                                )   
+                    if subtasks:
+                        return ft.Card(
+                            content=ft.Container(
+                                leading=cb,
+                                title=ft.Text(
+                                    note['title'], 
+                                    weight="bold",
+                                    style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH if is_task_done else None)
+                                ),
+                                subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')} | {len(subtasks)} subtasks"),
+                                trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
+                                controls=[
+                                    ft.Container(
+                                        content=ft.Column([
+                                            ft.ListTile(
+                                                title=ft.Text(sub['title'], size=14),
+                                                subtitle=ft.Text(f"Priority: {sub.get('priority', 'Low')}", size=12),
+                                                leading=ft.Icon(ft.Icons.SUBDIRECTORY_ARROW_RIGHT, size=16)
+                                            ) for sub in subtasks
+                                            ]),
+                                        padding=ft.Padding.only(left=20)
+                                    )
+                                ]
                             )
                         )
+                    else:
+                        return ft.Card(
+                            content=ft.ListTile(
+                                leading=cb,
+                                title=ft.Text(
+                                    note['title'], 
+                                    weight="bold",
+                                    style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH if is_task_done else None)
+                                ),
+                            subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}"),
+                            trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
+                            )
+                        )
+            for note in notes:
+                tasks_view.controls.append(build_task_ui(note))
             page.update()
         except Exception as e:
             print(f"Connection / Logic Error: {e}")
             tasks_view.controls.append(ft.Text("Could not connect to server.", color="red"))
-            page.update()
+            page.update() 
 
     def save_tasks(e):
         if not new_task_title.value:
