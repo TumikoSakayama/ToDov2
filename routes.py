@@ -146,7 +146,7 @@ def create_note():
             db.session.add(subtask)
     db.session.commit()
 
-    return jsonify(serialize_note(new_note, nested=True)), 201
+    return jsonify({'message': 'Note created successfully'}), 201
         
 
     # Handle tags
@@ -171,9 +171,13 @@ def create_note():
 
     return jsonify({'message': 'Note created successfully'}), 201
 
-@notes_blueprint.route('/api/notes/<int:note_id>', methods=['PUT'])
-def update_note(note_id):
+@notes_blueprint.route('/api/notes/<int:note_id>', methods=['GET','PUT'])
+def update_or_get_note(note_id):
     note = Note.query.get_or_404(note_id)
+
+    if request.method == 'GET':
+        is_nested = request.args.get('nested', 'false').lower() == 'true'
+        return jsonify(serialize_note(note, nested=is_nested))
     data = request.json
 
     note.title = data.get('title', note.title)

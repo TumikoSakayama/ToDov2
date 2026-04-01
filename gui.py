@@ -245,6 +245,53 @@ def main(page: ft.Page):
     load_tasks()
 
     def confirm_completion(task_id, task_title, checkbox_ref):
+        complete_dialog = ft.AlertDialog()
+        try:
+            res = requests.get(f"{API_URL}/{task_id}?nested=true", timeout=5)
+            
+            if res.status_code != 200:
+                print(f"Server Error {res.status_code}: {res.text}")
+                checkbox_ref.value = False
+                page.update()
+                return
+            task_data = res.json()
+        except Exception as e:
+            print(f"Connection Error: {e}")
+
+
+        task_data = res.json()
+
+        def undo(e):
+            try:
+                update_task(task_id, False)
+                if page.snack_bar:
+                    page.snack_bar.open = False
+                    page.update()
+            except Exception as ex:
+                print(f"Undo Error: {ex}")\
+
+        def handle_yes(e):
+            try:
+                res = requests.put(f"{API_URL}/{task_id}", json={'is_done': True}, timeout=5)
+                if res.status_code == 200:
+                    complete_dialog.open = False
+                    load_tasks()
+                    page.snack_bar = ft.SnackBar(
+                        content=ft.Text(f"{task_title} marked as completed."),
+                        action='UNDO',
+                        on_action=undo,
+                        duration=5000
+                    )
+                    page.snack_bar.open = True
+                    page.update()
+            except Exception as ex:
+                print(f"Completion Error: {ex}")
+
+        def handle_no(e):
+            checkbox_ref.value = False
+            complete_dialog.open = False
+            page.update()
+
         try:
             res = requests.get(f"{API_URL}/{task_id}?nested=true", timeout=5)
             task_data = res.json()
@@ -260,6 +307,8 @@ def main(page: ft.Page):
                         ft.TextButton("Home", on_click=lambda _: (
                             setattr(warning_dialog, "open", False),
                             setattr(checkbox_ref, "open", False),
+                            checkbox_ref.update(),
+                            load_tasks(),
                             page.update()
                         ))
                     ]
@@ -271,11 +320,6 @@ def main(page: ft.Page):
 
         except Exception as e:
             print(f"Validation Error: {e}")
-
-        def handle_no(e):
-            checkbox_ref.value = False
-            complete_dialog.open = False
-            page.update()
 
         complete_dialog.title = ft.Text("Confirm Completion")
         complete_dialog.content = ft.Text(f"Mark '{task_title}' as completed?")
