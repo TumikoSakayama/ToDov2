@@ -245,6 +245,17 @@ def update_or_get_note(note_id):
 
     if note.parent_id == note.id:
         return jsonify({'error': 'A task cannot be its own subtask'}), 400
+
+    if 'parent_id' in data:
+        new_parent_id = data.get('parent_id')
+
+        if new_parent_id == note.id:
+            return jsonify({'error': 'A task cannot be its own subtask'}), 400
+
+        if new_parent_id is not None:
+            parent_task = Note.query.get(new_parent_id)
+            if parent_task and parent_task.parent_id is not None:
+                return jsonify({'error': 'Subtasks can not have their own subtasks'}), 400
     
     if 'deadline' in data:
         if data['deadline']:
@@ -269,6 +280,9 @@ def update_or_get_note(note_id):
 @notes_blueprint.route('/api/notes/<int:note_id>', methods=['DELETE'])
 def delete_note(note_id):
     note = Note.query.get_or_404(note_id)
+
+    Note.query.filter_by(parent_id=note_id).all()
+
     db.session.delete(note)
     db.session.commit()
-    return jsonify({'message': 'Note deleted'})
+    return jsonify({'message': 'Note  and it subtasks deleted'})

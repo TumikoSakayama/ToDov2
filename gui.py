@@ -47,6 +47,9 @@ def main(page: ft.Page):
         page.update()
 
     def finalize_and_send():
+        if e:
+            e.control.disabled = True
+            e.control.update()
         try:
             print(f"DEBUG: Sending Payload: {current_task_payload}")
             res = requests.post(API_URL, json=current_task_payload, timeout=5)
@@ -56,6 +59,8 @@ def main(page: ft.Page):
                 current_task_payload.clear()
         except Exception as ex:
             print(f"Final Save Error: {ex}")
+        finally:
+            close_all_dialogs()
 
     def add_subtask(e):
         new_sub = {
@@ -120,7 +125,7 @@ def main(page: ft.Page):
 
                         cb = ft.Checkbox(value=is_task_done)
                         def on_change(e):
-                            if cb.value:
+                            if cb.value == True:
                                 confirm_completion(tid, title, cb)
                             else:
                                 update_task(tid, False)
@@ -271,6 +276,9 @@ def main(page: ft.Page):
                 print(f"Undo Error: {ex}")\
 
         def handle_yes(e):
+            e.control.disabled = True
+            e.control.update()
+
             try:
                 res = requests.put(f"{API_URL}/{task_id}", json={'is_done': True}, timeout=5)
                 if res.status_code == 200:
@@ -306,7 +314,7 @@ def main(page: ft.Page):
                     actions=[
                         ft.TextButton("Home", on_click=lambda _: (
                             setattr(warning_dialog, "open", False),
-                            setattr(checkbox_ref, "open", False),
+                            setattr(checkbox_ref, "value", False),
                             checkbox_ref.update(),
                             load_tasks(),
                             page.update()
