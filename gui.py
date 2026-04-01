@@ -48,6 +48,7 @@ def main(page: ft.Page):
 
     def finalize_and_send():
         try:
+            print(f"DEBUG: Sending Payload: {current_task_payload}")
             res = requests.post(API_URL, json=current_task_payload, timeout=5)
             if res.status_code in [200, 201]:
                 load_tasks()
@@ -97,10 +98,10 @@ def main(page: ft.Page):
     def load_tasks():
         try:
             response = requests.get(f"{API_URL}?nested=true", timeout=5)
-            tasks_view.controls.clear()
-
+            
             if response.status_code == 200:
                 notes = response.json()
+                tasks_view.controls.clear()
 
                 if not notes:
                     tasks_view.controls.append(
@@ -114,12 +115,13 @@ def main(page: ft.Page):
                     def build_task_ui(note):
                         is_task_done = note.get('is_done', False)
                         subtasks = note.get('subtasks', [])
+                        tid = note['id']
+                        title = note.get('title', "Untitled Task")
 
-                        
                         cb = ft.Checkbox(value=is_task_done)
                         def on_change(e):
                             if cb.value:
-                                confirm_completion(tid, title, ref)
+                                confirm_completion(tid, title, cb)
                             else:
                                 update_task(tid, False)
                         cb.on_change = on_change
@@ -130,50 +132,49 @@ def main(page: ft.Page):
                                 load_tasks()
                             except Exception as ex:
                                 print(f"Delete error: {ex}")
+                        
+                        text_style = ft.TextStyle(
+                            decoration=ft.TextDecoration.LINE_THROUGH if is_task_done else None
+                        )
 
-                    if subtasks:
-                        return ft.Card(
-                            content=ft.Container(
-                                leading=cb,
-                                title=ft.Text(
-                                    note['title'], 
-                                    weight="bold",
-                                    style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH if is_task_done else None)
-                                ),
-                                subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')} | {len(subtasks)} subtasks"),
-                                trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
-                                controls=[
-                                    ft.Container(
-                                        content=ft.Column([
-                                            ft.ListTile(
-                                                title=ft.Text(sub['title'], size=14),
-                                                subtitle=ft.Text(f"Priority: {sub.get('priority', 'Low')}", size=12),
-                                                leading=ft.Icon(ft.Icons.SUBDIRECTORY_ARROW_RIGHT, size=16)
-                                            ) for sub in subtasks
-                                            ]),
-                                        padding=ft.Padding.only(left=20)
-                                    )
-                                ]
+                        if len(subtasks) > 0:
+                            return ft.Card(
+                                content=ft.ExpansionTile(
+                                    leading=cb,
+                                    title=ft.Text(title, weight="bold", style=text_style),
+                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')} | {len(subtasks)} subtasks"),
+                                    trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
+                                    controls=[
+                                        ft.ListTile(
+                                            title=ft.Text(sub.get('title'), size=14),
+                                            #subtitle=ft.Text(f"Priority: {sub.get('priority', 'Low')}", size=12),
+                                            leading=ft.Checkbox(
+                                                value=sub.get('is_done', False),
+                                                on_change=lambda e, s_id=sub['id']: update_task(s_id, e.control.value)
+                                                ),
+                                                trailing = ft.Icon(ft.Icons.SUBDIRECTORY_ARROW_RIGHT, size=16
+                                            )
+                                        ) for sub in subtasks
+                                    ]
+                                )
                             )
-                        )
-                    else:
-                        return ft.Card(
-                            content=ft.ListTile(
-                                leading=cb,
-                                title=ft.Text(
-                                    note['title'], 
-                                    weight="bold",
-                                    style=ft.TextStyle(decoration=ft.TextDecoration.LINE_THROUGH if is_task_done else None)
-                                ),
-                            subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}"),
-                            trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
+                        else:
+                            return ft.Card(
+                                content=ft.ListTile(
+                                    leading=cb,
+                                    title=ft.Text(title, weight="bold", style=text_style),
+                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}"),
+                                    trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
+                                )
                             )
-                        )
-            for note in notes:
-                tasks_view.controls.append(build_task_ui(note))
+                    for note in notes:
+                        if note.get('parent_id') is None:
+                            tasks_view.controls.append(build_task_ui(note))
+
             page.update()
         except Exception as e:
             print(f"Connection / Logic Error: {e}")
+            tasks_view.controls.clear()
             tasks_view.controls.append(ft.Text("Could not connect to server.", color="red"))
             page.update() 
 
@@ -223,7 +224,6 @@ def main(page: ft.Page):
 
     page.overlay.extend([add_task_dialog, prompt_subtask_dialog, subtask_form_dialog])
 
-    #page.overlay.append(add_task_dialog)
     page.floating_action_button = ft.FloatingActionButton(
         content=ft.Container(
             content=ft.Text("+", size=22, weight="bold", color="white"),
@@ -245,33 +245,32 @@ def main(page: ft.Page):
     load_tasks()
 
     def confirm_completion(task_id, task_title, checkbox_ref):
-        complete_dialog = ft.AlertDialog()
-        
-        def undo(e):
-            try:
-                update_task(task_id, False)
-                if page.snack_bar:
-                    page.snack_bar.open = False
-                    page.update()
-            except Exception as ex:
-                print(f"Undo Error: {ex}")
+        try:
+            res = requests.get(f"{API_URL}/{task_id}?nested=true", timeout=5)
+            task_data = res.json()
+            subtasks = task_data.get('subtasks', [])
 
-        def handle_yes(e):
-            try:
-                res = requests.put(f"{API_URL}/{task_id}", json={'is_done': True}, timeout=5)
-                if res.status_code == 200:
-                    complete_dialog.open = False
-                    load_tasks()
-                    page.snack_bar = ft.SnackBar(
-                        content=ft.Text(f"'{task_title}' marked as completed."),
-                        action='UNDO',
-                        on_action=undo,
-                        duration=5000       
-                    )
-                    page.snack_bar.open = True
-                    page.update()
-            except Exception as ex:
-                print(f"Completion Error: {ex}")
+            unfinished = [s for s in subtasks if not s.get('is_done')]
+
+            if unfinished:
+                warning_dialog = ft.AlertDialog(
+                    title=ft.Text("Cannot Complete Task"),
+                    content=ft.Text(f"{task_title} has {len(unfinished)} unfinished subtasks. Please complete them first."),
+                    actions=[
+                        ft.TextButton("Home", on_click=lambda _: (
+                            setattr(warning_dialog, "open", False),
+                            setattr(checkbox_ref, "open", False),
+                            page.update()
+                        ))
+                    ]
+                )
+                page.overlay.append(warning_dialog)
+                warning_dialog.open = True
+                page.update()
+                return
+
+        except Exception as e:
+            print(f"Validation Error: {e}")
 
         def handle_no(e):
             checkbox_ref.value = False

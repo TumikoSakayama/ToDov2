@@ -131,6 +131,23 @@ def create_note():
         parent_id = data.get('parent_id'), # Handle subtasks
         recurrence_rule = data.get('recurrence_rule')
     )
+    db.session.add(new_note)
+    db.session.flush()
+
+    subtasks_data = data.get('subtasks', [])
+    if isinstance(subtasks_data, list):
+        for subtask in subtasks_data:
+            subtask = Note(
+                title=subtask.get('title'),
+                description=subtask.get('description'),
+                priority=subtask.get('priority', 'Low'),
+                parent_id=new_note.id
+            )
+            db.session.add(subtask)
+    db.session.commit()
+
+    return jsonify(serialize_note(new_note, nested=True)), 201
+        
 
     # Handle tags
     if 'tags' in data and isinstance(data['tags'], list):
