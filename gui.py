@@ -47,7 +47,7 @@ def main(page: ft.Page):
         subtask_form_dialog.open = False
         page.update()
 
-    def finalize_and_send():
+    def finalize_and_send(e=None):
         if e:
             e.control.disabled = True
             e.control.update()
@@ -139,9 +139,34 @@ def main(page: ft.Page):
                         cb = ft.Checkbox(value=is_task_done)
 
                         deadline_str = ""
+                        deadline_color = ft.Colors.GREY_700
+                        deadline_icon = ft.Icons.CALENDAR_MONTH
+                        
                         if note.get('deadline'):
-                            date_obj = datetime.isoformat(note['deadline'])
-                            deadline_str = f"Deadline: {date_obj.strftime('%Y-%m-%d')}"
+                            try:
+                                date_obj = datetime.fromisoformat(note['deadline'])
+                                now = datetime.now()
+                                diff = (date_obj - now).days
+
+                                if diff < 0:
+                                    deadline_color = ft.Colors.RED_ACCENT_700
+                                    deadline_str = f"OVERDUE: {date_obj.strftime('%b %d')}"
+                                    deadline_icon = ft.Icons.WARNING_AMBER_ROUNDED
+                                elif diff <= 2:
+                                    deadline_color = ft.Colors.ORANGE_ACCENT_800
+                                    deadline_str = f"Due: {date_obj.strftime('%b %d')} (Soon!)"
+                                else:
+                                    deadline_str = f"Due: {date_obj.strftime('%b %d')}"
+                            except Exception as e:
+                                print(f"Error parsing date: {e}")
+
+                        deadline_chip = ft.Row(
+                            controls=[
+                                ft.Icon(deadline_icon, color=deadline_color, size=14),
+                                ft.Text(deadline_str, size=12, color=deadline_color, weight="w600")
+                            ],
+                            spacing=5
+                        ) if deadline_str else ft.Container()
 
                         def on_change(e):
                             if cb.value == True:
@@ -166,12 +191,21 @@ def main(page: ft.Page):
                                 content=ft.ExpansionTile(
                                     leading=cb,
                                     title=ft.Text(title, weight="bold", style=text_style),
-                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}{deadline_str} | {len(subtasks)} subtasks"),
+                                    subtitle=ft.Column([
+                                        ft.Text(f"Priority: {note.get('priority', 'Low')}{deadline_str} | {len(subtasks)} subtasks"),
+                                        deadline_chip
+                                    ], spacing=2), 
                                     trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
                                     controls=[
                                         ft.ListTile(
                                             title=ft.Text(sub.get('title'), size=14),
-                                            #subtitle=ft.Text(f"Priority: {sub.get('priority', 'Low')}", size=12),
+                                            subtitle=ft.Text(
+                                                (
+                                                    f"Priority: {sub.get('priority', 'Low')} " + (f" | Due: {datetime.fromisoformat(sub['deadline']).strftime('%b %d')}" if sub.get('deadline') else "")
+                                                ),
+                                                size=12,
+                                                color=ft.Colors.GREY_600
+                                            ),
                                             leading=ft.Checkbox(
                                                 value=sub.get('is_done', False),
                                                 on_change=lambda e, s_id=sub['id']: update_task(s_id, e.control.value)
@@ -187,7 +221,10 @@ def main(page: ft.Page):
                                 content=ft.ListTile(
                                     leading=cb,
                                     title=ft.Text(title, weight="bold", style=text_style),
-                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}"),
+                                    subtitle=ft.Column([
+                                        ft.Text(f"Priority: {note.get('priority', 'Low')}"),
+                                        deadline_chip
+                                    ], spacing=2),
                                     trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
                                 )
                             )

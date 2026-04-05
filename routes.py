@@ -8,20 +8,28 @@ notes_blueprint = Blueprint('note', __name__)
 
 # Helper for serialization to support nesting and tags
 def serialize_note(note, nested=False):
+
+    def safe_isoformat(date_obj):
+        if date_obj is None:
+            return None
+        if isinstance(date_obj, str):
+            return date_obj
+        return date_obj.isoformat()
+
     data = {
         'id': note.id,
         'title': note.title,
         'description': note.description,
         'priority': note.priority,
         'is_done': note.is_done,
-        'deadline': note.deadline.isoformat() if note.deadline else None,
-        'created_at': note.created_at.isoformat() if note.created_at else None,
+        'deadline': safe_isoformat(note.deadline),
+        'created_at': safe_isoformat(note.created_at),
         'category': note.category.name if note.category else None,
         'category_id': note.category_id,
         'parent_id': note.parent_id,
         'tags': [tag.name for tag in note.tags],
         'recurrence_rule': note.recurrence_rule,
-        'next_occurrence_date': note.next_occurrence_date.isoformat() if note.next_occurrence_date else None
+        'next_occurrence_date': safe_isoformat(note.next_occurrence_date)
     }
     if nested:
         data['subtasks'] = [serialize_note(sub, nested=True) for sub in note.subtasks]
@@ -114,7 +122,6 @@ def get_all_tags():
 def create_note():
     data = request.json
     now = datetime.now()
-
     priority = data.get('priority', 'Medium')
     sub_data = data.get('subtasks', [])
 
@@ -123,18 +130,8 @@ def create_note():
         days = get_days_by_priority(priority)
         calculated_deadline = now + timedelta(days=days)
     else:
-        total_days = 0
-        for sub in sub_data:
-            total_days += get_days_by_priority(sub.get('priority', 'Medium'))
+        total_days = sum(get_days_by_priority(sub.get('priority', 'Medium')) for sub in sub_data)
         calculated_deadline = now + timedelta(days=total_days)
-
-
-    """ deadline = None
-    if data.get('deadline'):
-        try:
-            deadline = datetime.fromisoformat(data['deadline'])
-        except ValueError:
-            pass """
 
     new_note = Note(
         title = data.get('title'),
@@ -149,32 +146,26 @@ def create_note():
     db.session.add(new_note)
     db.session.flush()
 
-    subtasks_data = data.get('subtasks', [])
-    if isinstance(subtasks_data, list):
-        for subtask in subtasks_data:
-            sub_priority = subtask.get('priority', 'Medium')
-            sub_days = get_days_by_priority(sub_priority)
-            subtask = Note(
-                title=subtask.get('title'),
-                description=subtask.get('description'),
-                priority=sub_priority,
-                deadline=now + timedelta(days=sub_days),
-                parent_id=new_note.id
-            )
-            db.session.add(subtask)
+    for sub_item in sub_data:
+        sub_prio = sub_item.get('priority', 'Medium')
+        sub_days = get_days_by_priority(sub_prio)
+        sub_obj = Note(
+            title=sub_item.get('title'),
+            description=sub_item.get('description'),
+            priority=sub_prio,
+            deadline=now + timedelta(days=sub_days),
+            parent_id=new_note.id
+        )
+        db.session.add(sub_obj)
+
+    if 'tags' in data and isinstance(data['tags'], list):
+        for tag_name in data['tags']:
+            tag = Tag.query.filter_by(name=tag_name).first() or Tag(name=tag_name)
+            new_note.tags.append(tag)
+
     db.session.commit()
 
     return jsonify({'message': 'Note created successfully', 'deadline': calculated_deadline.isoformat()}), 201
-        
-
-    # Handle tags
-    if 'tags' in data and isinstance(data['tags'], list):
-        for tag_name in data['tags']:
-            tag = Tag.query.filter_by(name=tag_name).first()
-            if not tag:
-                tag = Tag(name=tag_name)
-                db.session.add(tag)
-            new_note.tags.append(tag)
 
     # Calculate next occurrence if rule exists
     if new_note.recurrence_rule and new_note.deadline:
