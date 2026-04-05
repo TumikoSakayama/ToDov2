@@ -1,5 +1,6 @@
 import flet as ft
 import requests
+from datetime import datetime, timedelta
 
 API_URL = "http://127.0.0.1:5000/api/notes"
 
@@ -75,9 +76,20 @@ def main(page: ft.Page):
         sub_desc.value = ""
         sub_priority.value = "Low"
 
+        update_preview()
         subtask_form_dialog.open = False
         prompt_subtask_dialog.open = True
         page.update()
+    
+    deadline_preview = ft.Text("Estimated Deadline: Calculating...", color="blue", weight="bold")
+
+    def update_preview():
+        prio = main_priority.value
+        subs = current_task_payload.get("subtasks", [])
+        date_str = calc_estimated_deadline(prio, subs)
+        deadline_preview.value = f"Estimated Deadline: {date_str}"
+        page.update()
+
 
     def start_sub_flow(e):
         if not main_title.value:
@@ -96,6 +108,7 @@ def main(page: ft.Page):
         main_title.value = ""
         main_desc.value = ""
 
+        update_preview()
         add_task_dialog.open = False
         prompt_subtask_dialog.open = True
         page.update()
@@ -124,6 +137,12 @@ def main(page: ft.Page):
                         title = note.get('title', "Untitled Task")
 
                         cb = ft.Checkbox(value=is_task_done)
+
+                        deadline_str = ""
+                        if note.get('deadline'):
+                            date_obj = datetime.isoformat(note['deadline'])
+                            deadline_str = f"Deadline: {date_obj.strftime('%Y-%m-%d')}"
+
                         def on_change(e):
                             if cb.value == True:
                                 confirm_completion(tid, title, cb)
@@ -147,7 +166,7 @@ def main(page: ft.Page):
                                 content=ft.ExpansionTile(
                                     leading=cb,
                                     title=ft.Text(title, weight="bold", style=text_style),
-                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')} | {len(subtasks)} subtasks"),
+                                    subtitle=ft.Text(f"Priority: {note.get('priority', 'Low')}{deadline_str} | {len(subtasks)} subtasks"),
                                     trailing=ft.IconButton(ft.Icons.DELETE, icon_color="red", on_click=del_clicked),
                                     controls=[
                                         ft.ListTile(
@@ -207,7 +226,10 @@ def main(page: ft.Page):
 
     prompt_subtask_dialog = ft.AlertDialog(
         title=ft.Text("Subtasks"),
-        content=ft.Text("Would you like to add a subtask to this task?"),
+        content=ft.Column([
+            ft.Text("Would you like to add a subtask to this task?"),
+            deadline_preview
+        ], tight=True),
         actions=[
             ft.TextButton("No", "Finish", on_click=lambda _: finalize_and_send()),
             ft.Button("Yes", "Add One", on_click=lambda _: (
@@ -346,6 +368,22 @@ def main(page: ft.Page):
             page.update()
         except Exception as ex:
             print(f"Update Error: {ex}")
+
+    def calc_estimated_deadline(priority, subtasks):
+        mapping = {
+            'Low': 15,
+            'Medium': 10,
+            'High': 5
+        }
+        now = datetime.now()
+
+        if not subtasks:
+            days = mapping.get(priority, 10)
+        else:
+            days = sum(mapping.get(sub.get('priority'), 10) for sub in subtasks)
+
+        future_date = now + timedelta(days=days)
+        return future_date.strftime('%Y-%m-%d')
 
 
 if __name__ == "__main__":

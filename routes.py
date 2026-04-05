@@ -113,22 +113,37 @@ def get_all_tags():
 @notes_blueprint.route('/api/notes', methods=['POST'])
 def create_note():
     data = request.json
-    
-    deadline = None
+    now = datetime.now()
+
+    priority = data.get('priority', 'Medium')
+    sub_data = data.get('subtasks', [])
+
+    calculated_deadline = None
+    if not sub_data:
+        days = get_days_by_priority(priority)
+        calculated_deadline = now + timedelta(days=days)
+    else:
+        total_days = 0
+        for sub in sub_data:
+            total_days += get_days_by_priority(sub.get('priority', 'Medium'))
+        calculated_deadline = now + timedelta(days=total_days)
+
+
+    """ deadline = None
     if data.get('deadline'):
         try:
             deadline = datetime.fromisoformat(data['deadline'])
         except ValueError:
-            pass
+            pass """
 
     new_note = Note(
         title = data.get('title'),
         description = data.get('description'),
-        priority = data.get('priority', 0),
+        priority = priority,
         is_done = data.get('is_done', False),
-        deadline = deadline,
+        deadline = calculated_deadline,
         category_id = data.get('category_id'),
-        parent_id = data.get('parent_id'), # Handle subtasks
+        parent_id = data.get('parent_id'),
         recurrence_rule = data.get('recurrence_rule')
     )
     db.session.add(new_note)
@@ -137,16 +152,19 @@ def create_note():
     subtasks_data = data.get('subtasks', [])
     if isinstance(subtasks_data, list):
         for subtask in subtasks_data:
+            sub_priority = subtask.get('priority', 'Medium')
+            sub_days = get_days_by_priority(sub_priority)
             subtask = Note(
                 title=subtask.get('title'),
                 description=subtask.get('description'),
-                priority=subtask.get('priority', 'Low'),
+                priority=sub_priority,
+                deadline=now + timedelta(days=sub_days),
                 parent_id=new_note.id
             )
             db.session.add(subtask)
     db.session.commit()
 
-    return jsonify({'message': 'Note created successfully'}), 201
+    return jsonify({'message': 'Note created successfully', 'deadline': calculated_deadline.isoformat()}), 201
         
 
     # Handle tags
@@ -286,3 +304,13 @@ def delete_note(note_id):
     db.session.delete(note)
     db.session.commit()
     return jsonify({'message': 'Note  and it subtasks deleted'})
+
+def get_days_by_priority(priority_name):
+    mapping = {
+        'Low': 15,
+        'Medium': 10,
+        'High': 5
+    
+    }
+    return mapping.get(priority_name, 10)
+
