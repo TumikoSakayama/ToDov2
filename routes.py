@@ -122,7 +122,12 @@ def get_all_tags():
 def create_note():
     data = request.json
     now = datetime.now()
-    priority = data.get('priority', 'Medium')
+    priority_name = data.get('priority', 'Low')
+    priority_map = {'Low': 0, 'Medium': 1, 'High': 2}
+    if isinstance(priority_name, str):
+        note_priority = priority_map.get(priority_name, 0)
+    else:
+        note_priority = priority_name
     sub_data = data.get('subtasks', [])
 
     total_days = get_days_by_priority(priority, sub_data)

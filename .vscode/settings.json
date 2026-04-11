@@ -1,6 +1,8 @@
 {
     "cSpell.words": [
+        "dateutil",
         "flet",
-        "prio"
+        "prio",
+        "rrule"
     ]
 }
