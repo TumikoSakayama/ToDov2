@@ -125,18 +125,13 @@ def create_note():
     priority = data.get('priority', 'Medium')
     sub_data = data.get('subtasks', [])
 
-    calculated_deadline = None
-    if not sub_data:
-        days = get_days_by_priority(priority)
-        calculated_deadline = now + timedelta(days=days)
-    else:
-        total_days = sum(get_days_by_priority(sub.get('priority', 'Medium')) for sub in sub_data)
-        calculated_deadline = now + timedelta(days=total_days)
+    total_days = get_days_by_priority(priority, sub_data)
+    calculated_deadline = now + timedelta(days=total_days)
 
     new_note = Note(
         title = data.get('title'),
         description = data.get('description'),
-        priority = priority,
+        priority = 1 if priority == 'High' else 2 if priority == 'Medium' else 3,
         is_done = data.get('is_done', False),
         deadline = calculated_deadline,
         category_id = data.get('category_id'),
@@ -148,7 +143,7 @@ def create_note():
 
     for sub_item in sub_data:
         sub_prio = sub_item.get('priority', 'Medium')
-        sub_days = get_days_by_priority(sub_prio)
+        sub_days = get_days_by_priority(sub_prio, [])
         sub_obj = Note(
             title=sub_item.get('title'),
             description=sub_item.get('description'),
@@ -296,12 +291,18 @@ def delete_note(note_id):
     db.session.commit()
     return jsonify({'message': 'Note  and it subtasks deleted'})
 
-def get_days_by_priority(priority_name):
+def get_days_by_priority(priority_name, subtask):
     mapping = {
-        'Low': 15,
-        'Medium': 10,
-        'High': 5
-    
+        'Low': 0.5,
+        'Medium': 1.0,
+        'High': 2.0
     }
-    return mapping.get(priority_name, 10)
+
+    base_time = mapping.get(priority_name, 1.0) * 3
+    subtask_impact = sum(mapping.get(sub.get('priority', 'Medium'), 1.0) for sub in subtask)
+    total_days = base_time + (subtask_impact * 0.6)
+
+    return max(1, min(total_days, 30))
+
+
 

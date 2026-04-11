@@ -201,7 +201,7 @@ def main(page: ft.Page):
                                             title=ft.Text(sub.get('title'), size=14),
                                             subtitle=ft.Text(
                                                 (
-                                                    f"Priority: {sub.get('priority', 'Low')} " + (f" | Due: {datetime.fromisoformat(sub['deadline']).strftime('%b %d')}" if sub.get('deadline') else "")
+                                                    f"Priority: {sub.get('priority', 'Low')}  " + (f" | Due: {datetime.fromisoformat(sub['deadline']).strftime('%b %d')}" if sub.get('deadline') else "")
                                                 ),
                                                 size=12,
                                                 color=ft.Colors.GREY_600
@@ -408,18 +408,16 @@ def main(page: ft.Page):
 
     def calc_estimated_deadline(priority, subtasks):
         mapping = {
-            'Low': 15,
-            'Medium': 10,
-            'High': 5
+            'Low': 0.5,
+            'Medium': 1.0,
+            'High': 2.0
         }
-        now = datetime.now()
+        base_time = mapping.get(priority, 1.0) * 3
+        subtasks_impact = sum(mapping.get(sub.get('priority'), 1.0) for sub in subtasks)
+        total_time = base_time + (subtasks_impact * 0.6)
+        final_days = max(1, min(total_time, 30))  # Ensure between 1 and 30 days
 
-        if not subtasks:
-            days = mapping.get(priority, 10)
-        else:
-            days = sum(mapping.get(sub.get('priority'), 10) for sub in subtasks)
-
-        future_date = now + timedelta(days=days)
+        future_date = datetime.now() + timedelta(days=final_days)
         return future_date.strftime('%Y-%m-%d')
 
 
